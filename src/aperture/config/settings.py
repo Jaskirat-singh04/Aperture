@@ -14,6 +14,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class DatabaseSettings(BaseSettings):
     """Connection settings for the Postgres instance that holds our own
     tables (tenants, documents, audit_log) and the LlamaIndex pgvector store.
+
+    Two roles are distinguished: "user" is the migration/owner role (runs
+    Alembic, owns the tables) and "app_user" is the least-privilege role the
+    running application connects as. They are different roles on purpose,
+    Postgres table owners bypass GRANT/REVOKE checks, so making audit_log
+    append-only only has teeth if the app does not connect as the owner.
     """
 
     model_config = SettingsConfigDict(env_prefix="APERTURE_DB_")
@@ -23,11 +29,22 @@ class DatabaseSettings(BaseSettings):
     name: str = "aperture"
     user: str = "aperture"
     password: str = "aperture"
+    app_user: str = "aperture_app"
+    app_password: str = "aperture_app"
 
     @property
     def sqlalchemy_url(self) -> str:
+        """URL for the migration/owner role. Used by Alembic."""
         return (
             f"postgresql+psycopg://{self.user}:{self.password}"
+            f"@{self.host}:{self.port}/{self.name}"
+        )
+
+    @property
+    def app_sqlalchemy_url(self) -> str:
+        """URL for the least-privilege role the running application uses."""
+        return (
+            f"postgresql+psycopg://{self.app_user}:{self.app_password}"
             f"@{self.host}:{self.port}/{self.name}"
         )
 
