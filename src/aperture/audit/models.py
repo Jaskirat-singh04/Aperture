@@ -59,9 +59,7 @@ class AuditLog(Base):
 
     __tablename__ = "audit_log"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     user_id: Mapped[str] = mapped_column(String, nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)

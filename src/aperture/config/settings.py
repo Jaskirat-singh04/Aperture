@@ -36,8 +36,7 @@ class DatabaseSettings(BaseSettings):
     def sqlalchemy_url(self) -> str:
         """URL for the migration/owner role. Used by Alembic."""
         return (
-            f"postgresql+psycopg://{self.user}:{self.password}"
-            f"@{self.host}:{self.port}/{self.name}"
+            f"postgresql+psycopg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
         )
 
     @property
@@ -99,9 +98,7 @@ class ObservabilitySettings(BaseSettings):
 class Settings(BaseSettings):
     """Top-level application settings. Nested settings are grouped by concern."""
 
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     environment: str = Field(default="local")
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
