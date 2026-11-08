@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Testing and coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Environment and secrets
+.env
+.env.local
+
+# Docker volumes and local data
+deploy/.data/
+postgres-data/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Alembic autogenerate scratch
+alembic/versions/__pycache__/
+
+# Logs
+*.log

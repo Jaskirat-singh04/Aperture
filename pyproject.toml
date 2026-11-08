@@ -1,0 +1,83 @@
+[project]
+name = "aperture"
+version = "0.1.0"
+description = "A permission-aware knowledge assistant for enterprises."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Jaskirat" }]
+
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.32,<1.0",
+    "pydantic>=2.9,<3.0",
+    "pydantic-settings>=2.6,<3.0",
+    "sqlalchemy>=2.0,<3.0",
+    "alembic>=1.14,<2.0",
+    "psycopg[binary]>=3.2,<4.0",
+    "llama-index-core>=0.12,<0.13",
+    "llama-index-vector-stores-postgres>=0.4,<0.5",
+    "llama-index-llms-litellm>=0.3,<0.4",
+    "llama-index-embeddings-litellm>=0.3,<0.4",
+    "llama-index-readers-docling>=0.3,<0.4",
+    "llama-index-node-parser-docling>=0.3,<0.4",
+    "docling>=2.14,<3.0",
+    "litellm>=1.52,<2.0",
+    "openfga-sdk>=0.9,<1.0",
+    "authlib>=1.3,<2.0",
+    "httpx>=0.27,<1.0",
+    "opentelemetry-api>=1.27,<2.0",
+    "opentelemetry-sdk>=1.27,<2.0",
+    "opentelemetry-exporter-otlp>=1.27,<2.0",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aperture"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9.0",
+    "pytest-asyncio>=0.24,<1.0",
+    "pytest-cov>=6.0,<7.0",
+    "ruff>=0.7,<1.0",
+    "mypy>=1.13,<2.0",
+    "pre-commit>=4.0,<5.0",
+    "ragas>=0.2,<0.3",
+    "pip-licenses>=5.0,<6.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aperture"]
+
+[tool.mypy]
+python_version = "3.11"
+# Not strict mode: several dependencies (llama-index, openfga-sdk, litellm) have
+# incomplete type stubs, so strict mode would produce mostly false positives.
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+no_implicit_optional = true
+exclude = ["alembic/versions"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests that require docker compose services",
+    "security: permission-leak and access-control tests (release gate)",
+]
+asyncio_mode = "auto"
