@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+
+  license-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Fail on GPL or AGPL dependencies
+        run: uv run python scripts/check_licenses.py
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest tests/unit -v
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+
+      - name: Start Postgres, Dex and OpenFGA
+        run: |
+          docker compose -f deploy/docker-compose.yml up -d \
+            postgres dex openfga-migrate openfga
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            docker compose -f deploy/docker-compose.yml exec -T postgres \
+              pg_isready -U aperture -d aperture && break
+            sleep 2
+          done
+
+      - name: Wait for OpenFGA
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/healthz && break
+            sleep 2
+          done
+
+      - name: Run Alembic migrations
+        run: uv run alembic upgrade head
+
+      - name: Seed OpenFGA
+        run: uv run python deploy/openfga/seed.py
+
+      - name: Run integration tests
+        run: uv run pytest tests/integration -v -m integration
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/docker-compose.yml down -v
+
+  permission-leak-tests:
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Run permission-leak tests (release gate, target is zero leaks)
+        run: uv run pytest tests/security -v -m security
