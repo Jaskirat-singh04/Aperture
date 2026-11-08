@@ -22,6 +22,10 @@ dependencies = [
     "llama-index-readers-docling>=0.3,<0.4",
     "llama-index-node-parser-docling>=0.3,<0.4",
     "docling>=2.14,<3.0",
+    # Pinned directly (not just transitively via docling) so the CPU-only
+    # wheel override below in [tool.uv.sources] takes effect.
+    "torch>=2.2,<3.0",
+    "torchvision>=0.17,<1.0",
     "litellm>=1.52,<2.0",
     "openfga-sdk>=0.9,<1.0",
     "authlib>=1.3,<2.0",
@@ -38,6 +42,19 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aperture"]
+
+[tool.uv.sources]
+# Docling pulls in torch (for layout/OCR models) transitively. This project
+# never does GPU inference locally, LLM inference goes through LiteLLM to a
+# hosted API or a separately-run self-hosted model, so the CPU-only wheel
+# avoids pulling multiple GB of unused CUDA packages.
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [
