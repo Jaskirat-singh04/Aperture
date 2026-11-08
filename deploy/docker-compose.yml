@@ -1,0 +1,98 @@
+name: aperture
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: aperture
+      POSTGRES_PASSWORD: aperture
+      POSTGRES_DB: aperture
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aperture -d aperture"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  openfga-migrate:
+    image: openfga/openfga:latest
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://aperture:aperture@postgres:5432/openfga?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  openfga:
+    image: openfga/openfga:latest
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://aperture:aperture@postgres:5432/openfga?sslmode=disable
+      OPENFGA_PLAYGROUND_ENABLED: "true"
+    ports:
+      - "8080:8080" # HTTP API
+      - "8081:8081" # gRPC API
+      - "3000:3000" # Playground
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openfga-migrate:
+        condition: service_completed_successfully
+
+  dex:
+    image: ghcr.io/dexidp/dex:latest
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - ./dex/config.yaml:/etc/dex/config.yaml:ro
+    ports:
+      - "5556:5556"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      APERTURE_ENVIRONMENT: local
+      APERTURE_DB_HOST: postgres
+      APERTURE_DB_PORT: "5432"
+      APERTURE_DB_NAME: aperture
+      APERTURE_DB_USER: aperture
+      APERTURE_DB_PASSWORD: aperture
+      # The running app connects as the least-privilege role, not the
+      # migration owner role, see DatabaseSettings for why this matters.
+      APERTURE_DB_APP_USER: aperture_app
+      APERTURE_DB_APP_PASSWORD: aperture_app
+      # The issuer must match the "iss" claim Dex puts in tokens (the
+      # externally reachable address from config.yaml), even though the API
+      # reaches Dex over the internal docker network to fetch signing keys.
+      APERTURE_OIDC_ISSUER: http://localhost:5556/dex
+      APERTURE_OIDC_JWKS_URL: http://dex:5556/dex/keys
+      APERTURE_OPENFGA_API_URL: http://openfga:8080
+      APERTURE_OTEL_OTLP_ENDPOINT: http://otel-collector:4317
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openfga:
+        condition: service_started
+      dex:
+        condition: service_started
+
+volumes:
+  postgres-data:

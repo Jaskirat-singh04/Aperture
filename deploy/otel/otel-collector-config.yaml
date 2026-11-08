@@ -1,0 +1,25 @@
+# Minimal local OpenTelemetry collector config. Traces are received over
+# OTLP and written to the collector's own logs, there is no cloud backend.
+# Point a real backend (Jaeger, Tempo, etc.) at this collector later by
+# adding an exporter, no application code changes needed.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
