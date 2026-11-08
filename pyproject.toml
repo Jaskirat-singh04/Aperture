@@ -58,7 +58,9 @@ exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-ignore = ["E501"]
+# B008: FastAPI's Depends() in argument defaults is the documented, idiomatic
+# pattern, not the mutable-default-argument bug this rule targets elsewhere.
+ignore = ["E501", "B008"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["aperture"]
