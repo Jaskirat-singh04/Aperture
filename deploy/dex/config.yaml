@@ -72,4 +72,5 @@ staticPasswords:
 signer:
   type: local
   config:
+    keysRotationPeriod: "6h"
     algorithm: "RS256"
