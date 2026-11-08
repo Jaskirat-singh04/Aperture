@@ -1,0 +1,32 @@
+model
+  schema 1.1
+
+# Authorization model for Aperture.
+#
+# A user can view a document through direct access (direct_viewer) or
+# through membership in a group that has been granted access (group_viewer).
+# A document belongs to exactly one tenant by convention (the seed and
+# ingestion code only ever write a single "tenant" tuple per document).
+#
+# Tenant isolation is enforced structurally, not just by convention: can_view
+# requires both viewer access AND membership in the same tenant the document
+# belongs to ("member from tenant"). This means even a misconfigured viewer
+# tuple across tenants cannot grant cross-tenant access.
+
+type user
+
+type tenant
+  relations
+    define member: [user]
+
+type group
+  relations
+    define member: [user]
+
+type document
+  relations
+    define tenant: [tenant]
+    define direct_viewer: [user]
+    define group_viewer: [group#member]
+    define viewer: direct_viewer or group_viewer
+    define can_view: viewer and member from tenant

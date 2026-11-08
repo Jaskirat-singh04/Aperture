@@ -1,0 +1,131 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "relations": {},
+      "metadata": null
+    },
+    {
+      "type": "tenant",
+      "relations": {
+        "member": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "member": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "group",
+      "relations": {
+        "member": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "member": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "document",
+      "relations": {
+        "tenant": {
+          "this": {}
+        },
+        "direct_viewer": {
+          "this": {}
+        },
+        "group_viewer": {
+          "this": {}
+        },
+        "viewer": {
+          "union": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "direct_viewer"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "group_viewer"
+                }
+              }
+            ]
+          }
+        },
+        "can_view": {
+          "intersection": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "viewer"
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "computedUserset": {
+                    "relation": "member"
+                  },
+                  "tupleset": {
+                    "relation": "tenant"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "tenant": {
+            "directly_related_user_types": [
+              {
+                "type": "tenant"
+              }
+            ]
+          },
+          "direct_viewer": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "group_viewer": {
+            "directly_related_user_types": [
+              {
+                "type": "group",
+                "relation": "member"
+              }
+            ]
+          },
+          "viewer": {
+            "directly_related_user_types": []
+          },
+          "can_view": {
+            "directly_related_user_types": []
+          }
+        }
+      }
+    }
+  ]
+}
