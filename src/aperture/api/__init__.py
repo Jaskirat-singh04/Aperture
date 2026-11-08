@@ -1,0 +1,1 @@
+"""The Aperture FastAPI application."""
