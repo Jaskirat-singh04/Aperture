@@ -1,62 +1,124 @@
 """Permission-leak tests. This is a release gate: the target is zero leaks.
 
-These tests are skipped until retrieval and generation are implemented
-(see aperture.retrieval.service and aperture.generation.service). Each one
-describes a specific leak that must never happen, they are not placeholders
-for "someday", they are the acceptance criteria for those modules.
+These run against the live docker compose stack (Postgres, OpenFGA, Ollama),
+not mocks, because the whole point is to catch a real leak in the real
+retrieval and generation path. Each test ingests fresh documents as one
+user and asserts another user cannot retrieve or be answered from them.
 
-The "permission-leak-tests" CI job (.github/workflows/ci.yml) runs this
-file specifically and must pass before release, once these tests are
-un-skipped and passing, that job becomes a real gate rather than a no-op.
+Requires `make up`, migrations applied (`uv run alembic upgrade head`) and
+OpenFGA seeded (`uv run python deploy/openfga/seed.py`). The
+"permission-leak-tests" CI job runs exactly this file.
 """
 
+import uuid
+
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from aperture.auth.models import CurrentUser
+from aperture.config import get_settings
+from aperture.generation import GenerationService
+from aperture.ingestion import IngestionService
+from aperture.retrieval import RetrievalService
 
 pytestmark = pytest.mark.security
 
+ALICE = CurrentUser(subject="alice", tenant_id="acme", groups=["finance"])
+BOB = CurrentUser(subject="bob", tenant_id="acme", groups=["engineering"])
+CAROL = CurrentUser(subject="carol", tenant_id="globex", groups=["finance"])
 
-@pytest.mark.skip(reason="Retrieval is not implemented yet, see aperture.retrieval.service")
-async def test_cross_tenant_retrieval_returns_nothing() -> None:
-    """A user in tenant A must never retrieve tenant B's documents, even
-    for a question whose wording matches tenant B content closely.
-
-    Expected behavior once implemented:
-    - Seed a document only in tenant "globex" (for example via
-      deploy/openfga/seed.py's doc-globex-finance-policy).
-    - Ask the same question as a user in tenant "acme" (for example bob).
-    - Assert the retrieved chunks list is empty, not just that the final
-      answer "happens" to omit it. Retrieval itself must not read any
-      globex chunk for an acme user, per the model in
-      deploy/openfga/model.fga (can_view requires tenant membership).
-    """
-
-
-@pytest.mark.skip(reason="Retrieval is not implemented yet, see aperture.retrieval.service")
-async def test_user_without_document_access_gets_no_chunks_from_it() -> None:
-    """A user who is not a direct_viewer or group_viewer on a document must
-    get zero chunks from that document, even within their own tenant.
-
-    Expected behavior once implemented:
-    - Seed doc-acme-alice-private as direct_viewer-only for alice.
-    - Ask a question as bob (same tenant, no access to this document).
-    - Assert none of the retrieved chunks have
-      document_id == "doc-acme-alice-private".
-    """
-
-
-@pytest.mark.skip(
-    reason="Retrieval and generation are not implemented yet, "
-    "see aperture.retrieval.service and aperture.generation.service"
+# Distinctive text so a leak would be unmistakable if it surfaced.
+SECRET_TEXT = (
+    "The acme finance quarterly bonus multiplier is seven point three "
+    "for every employee in the finance organization."
 )
-async def test_answer_never_cites_a_document_the_user_cannot_read() -> None:
-    """The final generated answer's citations must be a subset of the
-    document IDs that were permission-filtered into retrieval, never a
-    document the asking user is not permitted to read.
 
-    Expected behavior once implemented:
-    - Ask a question as a user with access to some, not all, matching
-      documents.
-    - Assert every cited document ID in the answer is in the set of
-      document IDs retrieval returned for that user, and that set itself
-      only contains documents OpenFGA's can_view allowed.
+
+@pytest.fixture(autouse=True)
+def _fresh_vector_store_per_loop():
+    """LlamaIndex's PGVectorStore holds an asyncpg pool bound to the event
+    loop it was first used on. pytest-asyncio gives each test its own loop,
+    so the lru_cache would hand back a store tied to a closed loop. Clear
+    the per-process caches around each test, this is a test-isolation
+    concern only, the API runs on a single long-lived loop.
     """
+
+    from aperture import vector_store
+    from aperture.auth import openfga_client
+
+    vector_store.get_vector_store.cache_clear()
+    vector_store.get_embed_model.cache_clear()
+    openfga_client.clear_resolved_ids_cache()
+    yield
+    vector_store.get_vector_store.cache_clear()
+    vector_store.get_embed_model.cache_clear()
+
+
+@pytest.fixture
+def session():
+    engine = create_engine(get_settings().database.app_sqlalchemy_url)
+    with Session(engine) as s:
+        yield s
+
+
+async def _ingest_as(session, user: CurrentUser, **kwargs) -> str:
+    service = IngestionService(session)
+    result = await service.ingest_text(
+        tenant_id=user.tenant_id,
+        title=f"leak-test-{uuid.uuid4().hex[:8]}",
+        text=SECRET_TEXT,
+        **kwargs,
+    )
+    session.commit()
+    return result.document_id
+
+
+async def test_cross_tenant_retrieval_returns_nothing(session) -> None:
+    """A user in tenant globex must never retrieve an acme document, even
+    for a question whose wording matches it closely.
+    """
+
+    doc_id = await _ingest_as(session, ALICE, viewer_groups=["finance"])
+
+    chunks = await RetrievalService().retrieve(CAROL, "quarterly bonus multiplier")
+
+    assert all(c.document_id != doc_id for c in chunks)
+
+
+async def test_user_without_document_access_gets_no_chunks_from_it(session) -> None:
+    """Bob (same tenant, different group, no grant) must get zero chunks
+    from a finance-only document.
+    """
+
+    doc_id = await _ingest_as(session, ALICE, viewer_groups=["finance"])
+
+    chunks = await RetrievalService().retrieve(BOB, "quarterly bonus multiplier")
+
+    assert all(c.document_id != doc_id for c in chunks)
+
+
+async def test_answer_never_cites_a_document_the_user_cannot_read(session) -> None:
+    """The generated answer for a user without access must not cite the
+    document, and must not leak its distinctive content.
+    """
+
+    await _ingest_as(session, ALICE, viewer_groups=["finance"])
+
+    chunks = await RetrievalService().retrieve(BOB, "quarterly bonus multiplier")
+    answer = await GenerationService().generate("quarterly bonus multiplier", chunks)
+
+    assert answer.cited_document_ids == []
+    assert "seven point three" not in answer.text.lower()
+
+
+async def test_owner_can_retrieve_their_own_document(session) -> None:
+    """Sanity check the leak tests above are meaningful: the authorized
+    user (alice, finance) does retrieve the document the others cannot.
+    """
+
+    doc_id = await _ingest_as(session, ALICE, viewer_groups=["finance"])
+
+    chunks = await RetrievalService().retrieve(ALICE, "quarterly bonus multiplier")
+
+    assert any(c.document_id == doc_id for c in chunks)

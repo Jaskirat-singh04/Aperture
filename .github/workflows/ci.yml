@@ -90,5 +90,43 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync
+
+      - name: Start Postgres, OpenFGA and Ollama
+        run: |
+          docker compose -f deploy/docker-compose.yml up -d \
+            postgres openfga-migrate openfga ollama
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            docker compose -f deploy/docker-compose.yml exec -T postgres \
+              pg_isready -U aperture -d aperture && break
+            sleep 2
+          done
+
+      - name: Wait for OpenFGA
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/healthz && break
+            sleep 2
+          done
+
+      - name: Pull Ollama models
+        run: |
+          docker compose -f deploy/docker-compose.yml exec -T ollama ollama pull llama3.2:1b
+          docker compose -f deploy/docker-compose.yml exec -T ollama ollama pull nomic-embed-text
+
+      - name: Run Alembic migrations
+        run: uv run alembic upgrade head
+
+      - name: Seed OpenFGA
+        run: uv run python deploy/openfga/seed.py
+
       - name: Run permission-leak tests (release gate, target is zero leaks)
+        env:
+          APERTURE_LLM_API_BASE: http://localhost:11434
         run: uv run pytest tests/security -v -m security
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/docker-compose.yml down -v

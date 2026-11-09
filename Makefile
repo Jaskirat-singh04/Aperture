@@ -13,18 +13,19 @@ up:
 down:
 	docker compose -f deploy/docker-compose.yml down
 
-# Unit and security tests only, no services required. Integration tests
-# need the docker compose stack (make up) and run as a separate CI job,
+# Unit tests only, no services required. Integration and security tests
+# need the docker compose stack (make up) and run as separate CI jobs,
 # see .github/workflows/ci.yml.
 test:
-	uv run pytest tests/unit tests/security
+	uv run pytest tests/unit
+
+# The permission-leak release gate. Runs against the live stack (make up),
+# migrations applied, OpenFGA seeded. See docs/threat-model.md and
+# tests/security for what these catch. Target is zero leaks.
+leak-test:
+	uv run pytest tests/security -v
 
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
 	uv run mypy src
-
-# Mirrors the CI "permission-leak-tests" job, see docs/threat-model.md and
-# tests/security for what these are meant to catch.
-leak-test:
-	uv run pytest tests/security -v
