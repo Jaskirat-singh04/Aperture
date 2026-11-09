@@ -62,6 +62,16 @@ services:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
 
+  # Self-hosted LLM and embedding provider, see ADR 0010. Models are not
+  # baked into the image, `make up` pulls them after this container starts
+  # (see the Makefile), so the image itself stays small.
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+
   api:
     build:
       context: ..
@@ -84,6 +94,12 @@ services:
       APERTURE_OIDC_JWKS_URL: http://dex:5556/dex/keys
       APERTURE_OPENFGA_API_URL: http://openfga:8080
       APERTURE_OTEL_OTLP_ENDPOINT: http://otel-collector:4317
+      APERTURE_LLM_API_BASE: http://ollama:11434
+      # APERTURE_OPENFGA_STORE_ID / AUTHORIZATION_MODEL_ID are deliberately
+      # left unset, aperture.auth.openfga_client resolves the store and the
+      # latest authorization model by name/store at runtime if they are
+      # blank, so there is nothing to copy out of deploy/openfga/seed.py's
+      # output into this file or a .env.
     ports:
       - "8000:8000"
     depends_on:
@@ -93,6 +109,9 @@ services:
         condition: service_started
       dex:
         condition: service_started
+      ollama:
+        condition: service_started
 
 volumes:
   postgres-data:
+  ollama-data:
