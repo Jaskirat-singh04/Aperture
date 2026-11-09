@@ -9,6 +9,7 @@ authors = [{ name = "Jaskirat" }]
 
 dependencies = [
     "fastapi>=0.115,<1.0",
+    "python-multipart>=0.0.12,<1.0",
     "uvicorn[standard]>=0.32,<1.0",
     "pydantic>=2.9,<3.0",
     "pydantic-settings>=2.6,<3.0",
@@ -83,7 +84,9 @@ ignore = ["E501", "B008"]
 known-first-party = ["aperture"]
 
 [tool.mypy]
-python_version = "3.11"
+# Matches .python-version (3.12), not the 3.11 floor in requires-python,
+# some dependency stubs (numpy) use syntax that needs 3.12 to type-check.
+python_version = "3.12"
 # Not strict mode: several dependencies (llama-index, openfga-sdk, litellm) have
 # incomplete type stubs, so strict mode would produce mostly false positives.
 ignore_missing_imports = true
