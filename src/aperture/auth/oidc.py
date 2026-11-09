@@ -53,8 +53,13 @@ def _parse_groups_claim(groups: list[str]) -> tuple[str, list[str]]:
 
 def _claims_to_user(claims: JWTClaims) -> CurrentUser:
     tenant_id, groups = _parse_groups_claim(claims.get("groups", []))
+    # The OpenFGA tuples (and deploy/openfga/seed.py) key users by their
+    # stable username, not Dex's opaque "sub" (which is a base64 blob
+    # encoding the connector and user id). Prefer preferred_username, then
+    # name, and only fall back to sub if neither is present.
+    subject = claims.get("preferred_username") or claims.get("name") or claims["sub"]
     return CurrentUser(
-        subject=claims["sub"],
+        subject=subject,
         email=claims.get("email"),
         tenant_id=tenant_id,
         groups=groups,

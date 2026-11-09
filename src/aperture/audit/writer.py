@@ -10,6 +10,7 @@ call record_query with the user, tenant, question and document IDs used.
 from sqlalchemy.orm import Session
 
 from aperture.audit.models import AuditLog
+from aperture.audit.tenants import ensure_tenant_exists
 
 
 def record_query(
@@ -25,6 +26,10 @@ def record_query(
     Does not commit, callers control the transaction boundary (for example
     committing together with other work in the same request).
     """
+
+    # A user can ask a question before anything has been ingested for their
+    # tenant, so the tenant row may not exist yet, see audit.tenants.
+    ensure_tenant_exists(session, tenant_id)
 
     entry = AuditLog(
         tenant_id=tenant_id,

@@ -1,7 +1,7 @@
 """Application configuration, read from environment variables and .env.
 
 LLM and embedding providers are configured through LiteLLM model identifiers
-(for example "openai/gpt-4o-mini" or "ollama/llama3") so swapping a hosted API
+(for example "openai/gpt-4o-mini" or "ollama/llama3.2:1b") so swapping a hosted API
 for a self-hosted model is a config change, not a code change.
 """
 
@@ -58,7 +58,7 @@ class LLMSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="APERTURE_LLM_")
 
-    model: str = "ollama/llama3"
+    model: str = "ollama/llama3.2:1b"
     embedding_model: str = "ollama/nomic-embed-text"
     api_base: str | None = None
     api_key: str | None = None

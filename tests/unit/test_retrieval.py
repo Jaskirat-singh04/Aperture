@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from llama_index.core.schema import TextNode
+from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
 from llama_index.core.vector_stores.types import VectorStoreQueryResult
 
 from aperture.auth.models import CurrentUser
@@ -62,7 +62,11 @@ async def test_retrieve_restricts_query_to_permitted_documents_and_tenant(
     embed_model.aget_query_embedding = AsyncMock(return_value=[0.1, 0.2])
     monkeypatch.setattr("aperture.retrieval.service.get_embed_model", lambda: embed_model)
 
-    node = TextNode(text="refunds within 30 days", metadata={"document_id": "doc-1"})
+    # ref_doc_id (via the SOURCE relationship), not metadata, carries the
+    # document ID once a node comes back out of the vector store, see
+    # the comment on RetrievedChunk's construction in retrieval/service.py.
+    node = TextNode(text="refunds within 30 days")
+    node.relationships[NodeRelationship.SOURCE] = RelatedNodeInfo(node_id="doc-1")
     query_result = VectorStoreQueryResult(nodes=[node], similarities=[0.87])
     vector_store = MagicMock()
     vector_store.aquery = AsyncMock(return_value=query_result)

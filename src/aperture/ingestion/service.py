@@ -26,6 +26,7 @@ from openfga_sdk.client.models import ClientTuple, ClientWriteRequest
 from sqlalchemy.orm import Session
 
 from aperture.audit.models import Document as DocumentRow
+from aperture.audit.tenants import ensure_tenant_exists
 from aperture.auth.openfga_client import get_openfga_client
 from aperture.vector_store import get_embed_model, get_vector_store
 
@@ -112,9 +113,17 @@ class IngestionService:
     ) -> IngestResult:
         document_id = f"doc-{uuid.uuid4().hex[:12]}"
 
+        # id_=document_id (not a "document_id" metadata key) is deliberate:
+        # LlamaIndex's own node metadata serialization already writes a
+        # top-level "document_id" key derived from the source Document's
+        # id_ (aliasing doc_id/ref_doc_id), setting id_ here makes that
+        # key equal to our document_id instead of colliding with it (a
+        # custom "document_id" metadata entry would silently be
+        # overwritten by LlamaIndex's own alias of the same name).
         llama_doc = LlamaDocument(
+            id_=document_id,
             text=text,
-            metadata={"tenant_id": tenant_id, "document_id": document_id},
+            metadata={"tenant_id": tenant_id},
         )
         splitter = SentenceSplitter(chunk_size=_CHUNK_SIZE, chunk_overlap=_CHUNK_OVERLAP)
         nodes = splitter.get_nodes_from_documents([llama_doc])
@@ -126,6 +135,7 @@ class IngestionService:
         if nodes:
             await get_vector_store().async_add(nodes)
 
+        ensure_tenant_exists(self._session, tenant_id)
         self._session.add(
             DocumentRow(id=document_id, tenant_id=tenant_id, source=source, title=title, uri=uri)
         )

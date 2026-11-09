@@ -82,7 +82,12 @@ class RetrievalService:
         similarities = result.similarities or [0.0] * len(result.nodes or [])
         return [
             RetrievedChunk(
-                document_id=node.metadata["document_id"],
+                # ref_doc_id, not node.metadata["document_id"]: ingestion
+                # sets id_=document_id on the source Document (see
+                # IngestionService._ingest), the vector store's own
+                # (de)serialization reconstructs ref_doc_id from that and
+                # strips document_id back out of the plain metadata dict.
+                document_id=node.ref_doc_id or "",
                 text=node.get_content(),
                 score=score,
             )

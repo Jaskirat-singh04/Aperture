@@ -6,6 +6,9 @@ setup:
 
 up:
 	docker compose -f deploy/docker-compose.yml up -d --build
+	@echo "Pulling Ollama models (llama3.2:1b, nomic-embed-text), first run downloads ~1.5GB..."
+	docker compose -f deploy/docker-compose.yml exec ollama ollama pull llama3.2:1b
+	docker compose -f deploy/docker-compose.yml exec ollama ollama pull nomic-embed-text
 
 down:
 	docker compose -f deploy/docker-compose.yml down
