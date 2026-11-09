@@ -1,30 +1,33 @@
 """Permission-aware retrieval.
 
-Not implemented yet. This module documents the intended flow so the
-permission boundary is clear before any retrieval code is written:
+Permissions are resolved before any chunk is fetched, see
+docs/adr/0007-structural-tenant-isolation-in-openfga-model.md:
 
-1. Resolve the set of document IDs the asking user may read, BEFORE any
-   vector search runs:
-   a. Call OpenFGA's ListObjects (or equivalent batched Check calls) for
-      relation "can_view", type "document", user "user:<subject>".
-   b. OpenFGA itself enforces tenant isolation (see deploy/openfga/model.fga,
-      can_view requires both viewer access and tenant membership), so the
-      returned document IDs are already scoped to the caller's tenant.
-2. Restrict the LlamaIndex / pgvector query to that exact set of document
-   IDs, using a metadata filter (document_id IN [...]) passed to the
-   pgvector vector store query, not a post-filter applied after retrieval.
-   Chunks are never fetched for documents outside the allowed set.
-3. Return the matching chunks with their source document IDs, so the
-   generation step can cite only documents the user is allowed to read.
-
-The permission check in step 1 must complete, and the resulting document ID
-list must be non-empty-or-explicitly-empty, before step 2 runs. Retrieval
-must never run against the full, unfiltered document set.
+1. Resolve the set of document IDs the asking user may read via OpenFGA's
+   ListObjects for relation "can_view", type "document". OpenFGA itself
+   enforces tenant isolation (can_view requires both viewer access and
+   tenant membership), so the returned IDs are already tenant-scoped.
+2. If that set is empty, return no chunks, the vector store is never
+   queried. Otherwise restrict the pgvector query to exactly that set of
+   document IDs (a metadata filter, not a post-filter), plus the user's
+   tenant_id as a second, redundant filter.
 """
 
 from dataclasses import dataclass
 
+from llama_index.core.vector_stores.types import (
+    FilterOperator,
+    MetadataFilter,
+    MetadataFilters,
+    VectorStoreQuery,
+)
+from openfga_sdk.client.models import ClientListObjectsRequest
+
 from aperture.auth.models import CurrentUser
+from aperture.auth.openfga_client import get_openfga_client
+from aperture.vector_store import get_embed_model, get_vector_store
+
+DEFAULT_TOP_K = 5
 
 
 @dataclass
@@ -37,25 +40,51 @@ class RetrievedChunk:
 
 
 class RetrievalService:
-    """Stub. See module docstring for the intended flow."""
-
     async def list_permitted_document_ids(self, user: CurrentUser) -> list[str]:
-        """Return the document IDs `user` may read, via OpenFGA ListObjects.
+        """Document IDs `user` may read, via OpenFGA's ListObjects."""
 
-        TODO: call the OpenFGA client's list_objects with
-        type="document", relation="can_view", user=f"user:{user.subject}".
-        """
+        async with get_openfga_client() as client:
+            response = await client.list_objects(
+                ClientListObjectsRequest(
+                    user=f"user:{user.subject}",
+                    relation="can_view",
+                    type="document",
+                )
+            )
+        return [obj.removeprefix("document:") for obj in response.objects or []]
 
-        raise NotImplementedError("Permission-aware retrieval is not implemented yet.")
-
-    async def retrieve(self, user: CurrentUser, question: str) -> list[RetrievedChunk]:
+    async def retrieve(
+        self, user: CurrentUser, question: str, top_k: int = DEFAULT_TOP_K
+    ) -> list[RetrievedChunk]:
         """Retrieve chunks for `question`, restricted to documents `user`
-        may read and to `user`'s tenant.
-
-        TODO: call list_permitted_document_ids first, then query the
-        LlamaIndex pgvector store with a metadata filter on document_id
-        (and tenant_id as a second, redundant filter) before any chunk is
-        returned.
+        may read and to `user`'s tenant. Returns an empty list, without
+        querying the vector store at all, if `user` may read nothing.
         """
 
-        raise NotImplementedError("Permission-aware retrieval is not implemented yet.")
+        permitted_ids = await self.list_permitted_document_ids(user)
+        if not permitted_ids:
+            return []
+
+        embed_model = get_embed_model()
+        query_embedding = await embed_model.aget_query_embedding(question)
+
+        filters = MetadataFilters(
+            filters=[
+                MetadataFilter(key="document_id", value=permitted_ids, operator=FilterOperator.IN),
+                MetadataFilter(key="tenant_id", value=user.tenant_id, operator=FilterOperator.EQ),
+            ]
+        )
+        query = VectorStoreQuery(
+            query_embedding=query_embedding, similarity_top_k=top_k, filters=filters
+        )
+
+        result = await get_vector_store().aquery(query)
+        similarities = result.similarities or [0.0] * len(result.nodes or [])
+        return [
+            RetrievedChunk(
+                document_id=node.metadata["document_id"],
+                text=node.get_content(),
+                score=score,
+            )
+            for node, score in zip(result.nodes or [], similarities, strict=False)
+        ]
