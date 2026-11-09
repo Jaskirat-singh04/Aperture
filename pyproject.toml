@@ -37,6 +37,11 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.48b0",
 ]
 
+[project.optional-dependencies]
+# The Streamlit test UI (ui/app.py). Optional so the API image does not
+# carry it. Install with: uv sync --extra ui
+ui = ["streamlit>=1.40,<2.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
