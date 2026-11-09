@@ -1,4 +1,4 @@
-"""Document ingestion. See ingestion.service for the intended flow."""
+"""Document ingestion: parse, chunk, embed, store, and authorize."""
 
 from aperture.ingestion.service import IngestionService, IngestResult
 
